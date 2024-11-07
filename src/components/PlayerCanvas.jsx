@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
 const PlayerCanvas = () => {
   const canvasRef = useRef(null);
@@ -20,6 +20,21 @@ const PlayerCanvas = () => {
   const keysPressed = useRef({ a: false, d: false, space: false });
   let nextGridMovingRight = true;
   const particlesRef = useRef([]);
+  const [gameOver, setGameOver] = useState(false);
+  const [gameStarted, setGameStarted] = useState(false);
+  const score = useRef(0);
+
+  const enemyKillSoundRef = useRef(new Audio('../sounds/explode.wav'));
+  const backGroundMusic = useRef(new Audio('../sounds/backgroundMusic.wav'))
+  const shootMusic = useRef(new Audio('../sounds/shoot.wav'))
+  const enemyShootMusic = useRef(new Audio('../sounds/enemyShoot.wav'))
+
+
+  // Start the game when the "Start Game" button is clicked
+  const startGame = () => {
+    setGameStarted(true);
+  };
+
 
   // Player 
   useEffect(() => {
@@ -148,11 +163,54 @@ const PlayerCanvas = () => {
     });
   };
 
+  const checkGameOver = () => {
+    // Check if any invader projectile collides with the player
+    for (const proj of invadersProjectilesRef.current) {
+      if (
+        proj.x > playerRef.current.position.x &&
+        proj.x < playerRef.current.position.x + playerRef.current.width &&
+        proj.y > playerRef.current.position.y &&
+        proj.y < playerRef.current.position.y + playerRef.current.height
+      ) {
+        setGameOver(true);
+        return true;
+      }
+    }
+
+    // Check if any invader collides with the player
+    for (const invaderGrid of invadersRef.current) {
+      for (const invader of invaderGrid) {
+        if (
+          invader.position.x < playerRef.current.position.x + playerRef.current.width &&
+          invader.position.x + invader.width > playerRef.current.position.x &&
+          invader.position.y < playerRef.current.position.y + playerRef.current.height &&
+          invader.position.y + invader.height > playerRef.current.position.y
+        ) {
+          setGameOver(true);
+          return true;
+        }
+      }
+    }
+
+    return false;
+  };
+
   // Canvas
   useEffect(() => {
+    if (gameOver) return;
+
     const canvas = canvasRef.current;
     const context = canvas.getContext('2d');
     createBackgroundParticles();
+
+    if (gameStarted) {
+      backGroundMusic.current.loop = true; // Loop the background music
+      backGroundMusic.current.play().catch((error) => console.log("Audio play error:", error));
+    }
+
+    else return () => {
+      backGroundMusic.current.pause();
+    };
 
     const updatePosition = () => {
       if (
@@ -173,6 +231,7 @@ const PlayerCanvas = () => {
 
     const shootProjectile = () => {
       if (canShootRef.current && keysPressed.current.space) {
+        shootMusic.current.play();
         const projectile = {
           x: playerRef.current.position.x + playerRef.current.width / 2,
           y: playerRef.current.position.y,
@@ -188,10 +247,12 @@ const PlayerCanvas = () => {
       }
     };
 
+    //invader shoot projectile
     const invaderShootProjectile = () => {
       invadersRef.current.forEach((invaderGrid) => {
         const randomInvader = invaderGrid[Math.floor(Math.random() * invaderGrid.length)];
         if (randomInvader) {
+          enemyShootMusic.current.play();
           const invaderProjectile = {
             x: randomInvader.position.x + randomInvader.width / 2,
             y: randomInvader.position.y + randomInvader.height,
@@ -203,6 +264,7 @@ const PlayerCanvas = () => {
       });
     };
 
+    //move invaders downwards
     const moveInvaderProjectiles = () => {
       invadersProjectilesRef.current.forEach((proj) => {
         proj.y += proj.velocity.y;
@@ -220,6 +282,7 @@ const PlayerCanvas = () => {
       invaderCanShootRef.current = !invaderCanShootRef.current;
     }
 
+    //check collision between player projectile and invader
     const checkCollision = (projectile, invader) => {
       return (
         projectile.x - projectile.radius < invader.position.x + invader.width &&
@@ -242,6 +305,10 @@ const PlayerCanvas = () => {
             if (checkCollision(proj, invader)) {
               invaderGrid.splice(invIndex, 1);
               projectilesRef.current.splice(projIndex, 1);
+
+              enemyKillSoundRef.current.play();
+              //score increment
+              score.current = score.current + 50;
 
               if (invaderGrid.length === 0) {
                 invadersRef.current.splice(gridIndex, 1);
@@ -322,9 +389,16 @@ const PlayerCanvas = () => {
         context.fillRect(projs.x, projs.y, 3, 10);
       });
 
+      
+    // Display score
+    context.fillStyle = 'white';
+    context.font = '24px Arial';
+    context.fillText(`Score: ${score.current}`, 20, 40);
     };
 
     const animate = () => {
+      if (checkGameOver()) return;
+
       updatePosition();
       shootProjectile();
       updateProjectiles();
@@ -366,9 +440,48 @@ const PlayerCanvas = () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
+  }, [gameStarted, gameOver]);
 
-  return <canvas ref={canvasRef} style={{ height: '100vh' }} />;
+  return (
+      <div className='bg-black'>
+        {!gameStarted && (
+          <button
+            onClick={startGame}
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              padding: '1em 2em',
+              fontSize: '1.5em',
+              cursor: 'pointer',
+              zIndex: 10,  
+              backgroundColor: 'blue', 
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+            }}
+          >
+            Start Game
+          </button>
+        )}
+
+    {gameOver && (
+    <div style={{ 
+      position: 'absolute', 
+      top: '50%', 
+      left: '50%', 
+      transform: 'translate(-50%, -50%)', 
+      color: 'red', 
+      fontSize: '2em' 
+      }}>
+      Game Over
+    </div>
+  )}
+
+  <canvas ref={canvasRef} style={{ height: '100vh' }} />;
+  </div>
+)
 };
 
 export default PlayerCanvas;
